@@ -40,10 +40,18 @@ LIMITS (next steps)
   - Person distance comes from box size (~1.7 m body), so it is rough (±25 %)
     and too far for people who are partly hidden or cut off by the frame.
 
-CONTROLS: Q = quit (the map is saved to outputs/)
+RUNNING
+  Laptop:        python rotate-klt-slam.py            (window; Q = quit)
+  Raspberry Pi:  python3 rotate-klt-slam.py --pi      (Pi camera; watch in a
+                 browser at http://<pi-name>.local:8090; Ctrl+C = quit)
+  Add --detector none / yolo / hailo to override DETECTOR below.
+  The map is saved to outputs/ when you quit.
 """
 
+import argparse
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import math
+import threading
 import time
 from pathlib import Path
 
@@ -82,6 +90,12 @@ PERSON_CONF = 0.5
 PERSON_LENGTH_M = 1.7     # standing height ≈ lying length
 MERGE_RADIUS_M = 1.5      # detections closer than this are the same person
 MIN_SIGHTINGS = 3         # seen this often before they count
+
+# Raspberry Pi (--pi): Camera Module 3 Wide through picamera2, and the view
+# is served to a browser because there is no screen over SSH.
+PI_HFOV_DEG = 102.0       # Camera Module 3 Wide (imx708_wide), horizontal
+PI_SENSOR_MODE = (2304, 1296)  # full-sensor mode, so the wide lens isn't cropped
+PI_VIEW_PORT = 8090
 
 MAP_PX = 600
 OUTPUT_DIR = Path(__file__).resolve().parents[1] / "outputs"
@@ -327,91 +341,192 @@ def draw_map(trajectory, pose, people_map):
 
 
 # ═══════════════════════════════════════════════════════════════
+#  RASPBERRY PI: CAMERA + BROWSER VIEW
+# ═══════════════════════════════════════════════════════════════
+
+class PiCamera:
+    """The Pi camera through picamera2 (OpenCV can't open it on a Pi 5).
+
+    Behaves like cv2.VideoCapture (read / isOpened / get / release), so the
+    main loop doesn't care which one it has.
+    """
+
+    def __init__(self):
+        from picamera2 import Picamera2
+        self.cam = Picamera2()
+        config = self.cam.create_video_configuration(
+            # "RGB888" is stored as B, G, R - the order OpenCV expects.
+            main={"size": (WIDTH, round(WIDTH * PI_SENSOR_MODE[1] / PI_SENSOR_MODE[0])),
+                  "format": "RGB888"},
+            raw={"size": PI_SENSOR_MODE},
+        )
+        self.cam.configure(config)
+        self.cam.start()
+
+    def read(self):
+        return True, self.cam.capture_array()
+
+    def isOpened(self):
+        return True
+
+    def get(self, prop):
+        return 0
+
+    def release(self):
+        self.cam.stop()
+
+
+class BrowserView:
+    """Serves the live view as an MJPEG stream: open http://<pi>.local:PORT/."""
+
+    def __init__(self, port):
+        self.jpeg = None
+        self.new_frame = threading.Condition()
+        view = self
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                if self.path != "/stream":
+                    page = (b"<html><body style='margin:0;background:#111'>"
+                            b"<img src='/stream' style='width:100%'></body></html>")
+                    self.send_response(200)
+                    self.send_header("Content-Type", "text/html")
+                    self.end_headers()
+                    self.wfile.write(page)
+                    return
+                self.send_response(200)
+                self.send_header("Content-Type", "multipart/x-mixed-replace; boundary=frame")
+                self.end_headers()
+                try:
+                    while True:
+                        with view.new_frame:
+                            view.new_frame.wait(timeout=2)
+                            jpeg = view.jpeg
+                        if jpeg is not None:
+                            self.wfile.write(b"--frame\r\nContent-Type: image/jpeg\r\n\r\n"
+                                             + jpeg + b"\r\n")
+                except (BrokenPipeError, ConnectionResetError):
+                    pass   # the browser tab was closed
+
+            def log_message(self, *args):
+                pass       # keep the terminal quiet
+
+        server = ThreadingHTTPServer(("0.0.0.0", port), Handler)
+        server.daemon_threads = True
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+
+    def show(self, image):
+        ok, buf = cv2.imencode(".jpg", image, [cv2.IMWRITE_JPEG_QUALITY, 70])
+        if ok:
+            with self.new_frame:
+                self.jpeg = buf.tobytes()
+                self.new_frame.notify_all()
+
+
+# ═══════════════════════════════════════════════════════════════
 #  MAIN LOOP
 # ═══════════════════════════════════════════════════════════════
 
-def run():
-    cap = cv2.VideoCapture(SOURCE)
+def run(pi=False):
+    cap = PiCamera() if pi else cv2.VideoCapture(SOURCE)
     if not cap.isOpened():
         raise RuntimeError(f"Cannot open camera source {SOURCE!r}")
-    is_file = isinstance(SOURCE, str) and Path(SOURCE).is_file()
+    is_file = not pi and isinstance(SOURCE, str) and Path(SOURCE).is_file()
+    hfov = PI_HFOV_DEG if pi else HFOV_DEG
+    view = BrowserView(PI_VIEW_PORT) if pi else None
+    if pi:
+        print(f"Watch it at http://<this-pi>.local:{PI_VIEW_PORT}/  (Ctrl+C to stop and save)")
+    last_print = 0.0
 
     detect = load_detector()
     tracker, pose, people_map = KLTTracker(), Pose(), PeopleMap()
     trajectory = [(0.0, 0.0)]
     boxes, frame_i, t_prev = [], 0, None
-    print("Rotate-KLT SLAM running. Q = quit.")
+    print("Rotate-KLT SLAM running." + ("" if pi else " Q = quit."))
 
-    while True:
-        ok, frame = cap.read()
-        if not ok:
-            break
-        h0, w0 = frame.shape[:2]
-        frame = cv2.resize(frame, (WIDTH, round(h0 * WIDTH / w0)))
-        h, w = frame.shape[:2]
-        f, cx, cy = focal_from_fov(w, HFOV_DEG), w / 2, h / 2
+    try:
+        while True:
+            ok, frame = cap.read()
+            if not ok:
+                break
+            h0, w0 = frame.shape[:2]
+            frame = cv2.resize(frame, (WIDTH, round(h0 * WIDTH / w0)))
+            h, w = frame.shape[:2]
+            f, cx, cy = focal_from_fov(w, hfov), w / 2, h / 2
 
-        # Elapsed time: a recorded video uses its own clock, a live camera the wall clock.
-        now = cap.get(cv2.CAP_PROP_POS_MSEC) / 1000 if is_file else time.monotonic()
-        dt = min(max(now - t_prev, 0.0), 0.2) if t_prev is not None else 0.0
-        t_prev = now
+            # Elapsed time: a recorded video uses its own clock, a live camera the wall clock.
+            now = cap.get(cv2.CAP_PROP_POS_MSEC) / 1000 if is_file else time.monotonic()
+            dt = min(max(now - t_prev, 0.0), 0.2) if t_prev is not None else 0.0
+            t_prev = now
 
-        # 1. Track points and turn their motion into yaw + forward motion.
-        tracks = tracker.track(cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY))
-        status, turning = "LOST", False
-        if tracks is not None:
-            q1, q2 = tracks
-            dyaw, expansion, flow_px = estimate_motion(q1, q2, f, cx, cy)
-            pose.yaw += dyaw
-            turning = dt > 0 and abs(dyaw) / dt > math.radians(TURN_THRESH_DEG_S)
+            # 1. Track points and turn their motion into yaw + forward motion.
+            tracks = tracker.track(cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY))
+            status, turning = "LOST", False
+            if tracks is not None:
+                q1, q2 = tracks
+                dyaw, expansion, flow_px = estimate_motion(q1, q2, f, cx, cy)
+                pose.yaw += dyaw
+                turning = dt > 0 and abs(dyaw) / dt > math.radians(TURN_THRESH_DEG_S)
 
-            # Expansion is only trusted when not turning: perspective during a
-            # turn also stretches the image a little.
-            if turning:
-                status = "TURNING " + ("RIGHT" if dyaw > 0 else "LEFT")
-            elif abs(expansion) > EXPANSION_THRESH:
-                forward = expansion > 0
-                pose.move_forward((1 if forward else -1) * WALK_SPEED * dt)
-                status = "FORWARD" if forward else "BACKWARD"
+                # Expansion is only trusted when not turning: perspective during a
+                # turn also stretches the image a little.
+                if turning:
+                    status = "TURNING " + ("RIGHT" if dyaw > 0 else "LEFT")
+                elif abs(expansion) > EXPANSION_THRESH:
+                    forward = expansion > 0
+                    pose.move_forward((1 if forward else -1) * WALK_SPEED * dt)
+                    status = "FORWARD" if forward else "BACKWARD"
+                else:
+                    status = "STILL" if flow_px < STILL_PX else "IDLE"
+
+                last_x, last_z = trajectory[-1]
+                if math.hypot(pose.x - last_x, pose.z - last_z) > 0.02:
+                    trajectory.append((pose.x, pose.z))
+
+            # 2. Detect people every few frames and put them on the map.
+            if frame_i % DETECT_EVERY == 0:
+                boxes = []
+                for box in detect(frame):
+                    ahead, right = locate_person(box, f, cx)
+                    person = people_map.add(*pose.to_world(ahead, right))
+                    boxes.append((box, person, math.hypot(ahead, right)))
+            frame_i += 1
+
+            # 3. Draw.
+            vis = frame.copy()
+            if tracks is not None:
+                color = (0, 0, 255) if turning else (0, 255, 0)
+                for (u1, v1), (u2, v2) in zip(q1.astype(int), q2.astype(int)):
+                    cv2.line(vis, (u1, v1), (u2, v2), color, 1)
+            for (x1, y1, x2, y2), person, dist in boxes:
+                cv2.rectangle(vis, (x1, y1), (x2, y2), (0, 0, 255), 2)
+                cv2.putText(vis, f"P{person['id']} ~{dist:.1f}m", (x1, max(15, y1 - 6)),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
+            cv2.putText(vis, f"STATUS: {status}", (15, 30),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 255), 2)
+            cv2.putText(vis, f"YAW: {math.degrees(pose.yaw):+.0f} deg   "
+                             f"POS: ({pose.x:+.1f}, {pose.z:+.1f}) m", (15, 60),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+
+            map_img = draw_map(trajectory, pose, people_map)
+            combined = np.hstack((vis, cv2.resize(map_img, (h, h))))
+            if view is not None:
+                view.show(combined)
+                if time.monotonic() - last_print > 1.0:   # a heartbeat in the terminal
+                    last_print = time.monotonic()
+                    print(f"  {status:16s} yaw {math.degrees(pose.yaw):+5.0f} deg  "
+                          f"pos ({pose.x:+.1f}, {pose.z:+.1f}) m  "
+                          f"people {len(people_map.confirmed())}")
             else:
-                status = "STILL" if flow_px < STILL_PX else "IDLE"
-
-            last_x, last_z = trajectory[-1]
-            if math.hypot(pose.x - last_x, pose.z - last_z) > 0.02:
-                trajectory.append((pose.x, pose.z))
-
-        # 2. Detect people every few frames and put them on the map.
-        if frame_i % DETECT_EVERY == 0:
-            boxes = []
-            for box in detect(frame):
-                ahead, right = locate_person(box, f, cx)
-                person = people_map.add(*pose.to_world(ahead, right))
-                boxes.append((box, person, math.hypot(ahead, right)))
-        frame_i += 1
-
-        # 3. Draw.
-        vis = frame.copy()
-        if tracks is not None:
-            color = (0, 0, 255) if turning else (0, 255, 0)
-            for (u1, v1), (u2, v2) in zip(q1.astype(int), q2.astype(int)):
-                cv2.line(vis, (u1, v1), (u2, v2), color, 1)
-        for (x1, y1, x2, y2), person, dist in boxes:
-            cv2.rectangle(vis, (x1, y1), (x2, y2), (0, 0, 255), 2)
-            cv2.putText(vis, f"P{person['id']} ~{dist:.1f}m", (x1, max(15, y1 - 6)),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
-        cv2.putText(vis, f"STATUS: {status}", (15, 30),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 255), 2)
-        cv2.putText(vis, f"YAW: {math.degrees(pose.yaw):+.0f} deg   "
-                         f"POS: ({pose.x:+.1f}, {pose.z:+.1f}) m", (15, 60),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
-
-        map_img = draw_map(trajectory, pose, people_map)
-        cv2.imshow("Rotate-KLT SLAM", np.hstack((vis, cv2.resize(map_img, (h, h)))))
-        if cv2.waitKey(1) & 0xFF == ord("q"):
-            break
+                cv2.imshow("Rotate-KLT SLAM", combined)
+                if cv2.waitKey(1) & 0xFF == ord("q"):
+                    break
+    except KeyboardInterrupt:
+        pass   # Ctrl+C: stop and save the map below
 
     cap.release()
-    cv2.destroyAllWindows()
+    if view is None:
+        cv2.destroyAllWindows()
 
     OUTPUT_DIR.mkdir(exist_ok=True)
     out = OUTPUT_DIR / f"klt_map_{time.strftime('%Y%m%d_%H%M%S')}.png"
@@ -422,4 +537,12 @@ def run():
 
 
 if __name__ == "__main__":
-    run()
+    parser = argparse.ArgumentParser(description="Rotate-KLT SLAM")
+    parser.add_argument("--pi", action="store_true",
+                        help="Raspberry Pi: Pi camera, view in a browser")
+    parser.add_argument("--detector", choices=["yolo", "hailo", "none"],
+                        help="override the DETECTOR setting")
+    args = parser.parse_args()
+    if args.detector:
+        DETECTOR = args.detector
+    run(pi=args.pi)
