@@ -44,13 +44,15 @@ RUNNING
   Laptop:        python rotate-klt-slam.py            (window; Q = quit)
   Raspberry Pi:  python3 rotate-klt-slam.py --pi      (Pi camera; watch in a
                  browser at http://<pi-name>.local:8090; Ctrl+C = quit)
-  Add --detector none / yolo / hailo to override DETECTOR below.
+  Add --detector none / yolo / hailo to override DETECTOR below, and
+  --conf / --merge / --sightings to tune the person settings without editing.
   The map is saved to outputs/ when you quit.
 """
 
 import argparse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import math
+import socket
 import threading
 import time
 from pathlib import Path
@@ -86,10 +88,10 @@ DETECTOR = "yolo"         # "yolo" (laptop), "hailo" (Pi AI HAT), "none"
 YOLO_WEIGHTS = "yolo26n.pt"
 HAILO_HEF = "/usr/share/hailo-models/yolov8s_h8l.hef"  # check this dir on the Pi
 DETECT_EVERY = 3          # run the detector every N frames
-PERSON_CONF = 0.5
+PERSON_CONF = 0.65        # was 0.5; higher = fewer false detections (clothes, chairs)
 PERSON_LENGTH_M = 1.7     # standing height ≈ lying length
-MERGE_RADIUS_M = 1.5      # detections closer than this are the same person
-MIN_SIGHTINGS = 3         # seen this often before they count
+MERGE_RADIUS_M = 2.5      # was 1.5; detections closer than this are the same person
+MIN_SIGHTINGS = 6         # was 3; seen this often before they count
 
 # Raspberry Pi (--pi): Camera Module 3 Wide through picamera2, and the view
 # is served to a browser because there is no screen over SSH.
@@ -435,7 +437,8 @@ def run(pi=False):
     hfov = PI_HFOV_DEG if pi else HFOV_DEG
     view = BrowserView(PI_VIEW_PORT) if pi else None
     if pi:
-        print(f"Watch it at http://<this-pi>.local:{PI_VIEW_PORT}/  (Ctrl+C to stop and save)")
+        name = socket.gethostname().split(".")[0]
+        print(f"Watch it at http://{name}.local:{PI_VIEW_PORT}/  (Ctrl+C to stop and save)")
     last_print = 0.0
 
     detect = load_detector()
@@ -542,7 +545,18 @@ if __name__ == "__main__":
                         help="Raspberry Pi: Pi camera, view in a browser")
     parser.add_argument("--detector", choices=["yolo", "hailo", "none"],
                         help="override the DETECTOR setting")
+    parser.add_argument("--conf", type=float, help=f"person confidence 0-1 (default {PERSON_CONF})")
+    parser.add_argument("--merge", type=float,
+                        help=f"same-person radius in metres (default {MERGE_RADIUS_M})")
+    parser.add_argument("--sightings", type=int,
+                        help=f"sightings before a person counts (default {MIN_SIGHTINGS})")
     args = parser.parse_args()
     if args.detector:
         DETECTOR = args.detector
+    if args.conf is not None:
+        PERSON_CONF = args.conf
+    if args.merge is not None:
+        MERGE_RADIUS_M = args.merge
+    if args.sightings is not None:
+        MIN_SIGHTINGS = args.sightings
     run(pi=args.pi)
