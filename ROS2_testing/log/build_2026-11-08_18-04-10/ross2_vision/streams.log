@@ -1,0 +1,25 @@
+[1.260s] Invoking command in '/home/sanjay/github_repos/ROSS2/ROS2_testing/build/ross2_vision': PYTHONPATH=/home/sanjay/github_repos/ROSS2/ROS2_testing/build/ross2_vision/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/home/sanjay/github_repos/ROSS2/ROS2_testing/install/ross2_vision/lib/python3.12/site-packages:${PYTHONPATH} /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py develop --editable --build-directory /home/sanjay/github_repos/ROSS2/ROS2_testing/build/ross2_vision/build --no-deps symlink_data
+[1.416s] /home/sanjay/.local/lib/python3.12/site-packages/setuptools/_distutils/dist.py:289: UserWarning: Unknown distribution option: 'tests_require'
+[1.416s]   warnings.warn(msg)
+[1.541s] running develop
+[1.699s] running egg_info
+[1.726s] creating ross2_vision.egg-info
+[1.726s] writing ross2_vision.egg-info/PKG-INFO
+[1.726s] writing dependency_links to ross2_vision.egg-info/dependency_links.txt
+[1.726s] writing entry points to ross2_vision.egg-info/entry_points.txt
+[1.726s] writing requirements to ross2_vision.egg-info/requires.txt
+[1.726s] writing top-level names to ross2_vision.egg-info/top_level.txt
+[1.726s] writing manifest file 'ross2_vision.egg-info/SOURCES.txt'
+[1.756s] reading manifest file 'ross2_vision.egg-info/SOURCES.txt'
+[1.756s] writing manifest file 'ross2_vision.egg-info/SOURCES.txt'
+[1.773s] running build_ext
+[1.776s] Creating /home/sanjay/github_repos/ROSS2/ROS2_testing/install/ross2_vision/lib/python3.12/site-packages/ross2-vision.egg-link (link to .)
+[1.776s] Installing esp32_cam_node script to /home/sanjay/github_repos/ROSS2/ROS2_testing/install/ross2_vision/lib/ross2_vision
+[1.776s] Installing yolov6_node script to /home/sanjay/github_repos/ROSS2/ROS2_testing/install/ross2_vision/lib/ross2_vision
+[1.776s] 
+[1.776s] Installed /home/sanjay/github_repos/ROSS2/ROS2_testing/build/ross2_vision
+[1.777s] running symlink_data
+[1.777s] creating /home/sanjay/github_repos/ROSS2/ROS2_testing/install/ross2_vision/share/ament_index/resource_index/packages
+[1.780s] symbolically linking /home/sanjay/github_repos/ROSS2/ROS2_testing/build/ross2_vision/resource/ross2_vision -> /home/sanjay/github_repos/ROSS2/ROS2_testing/install/ross2_vision/share/ament_index/resource_index/packages
+[1.780s] symbolically linking /home/sanjay/github_repos/ROSS2/ROS2_testing/build/ross2_vision/package.xml -> /home/sanjay/github_repos/ROSS2/ROS2_testing/install/ross2_vision/share/ross2_vision
+[1.812s] Invoked command in '/home/sanjay/github_repos/ROSS2/ROS2_testing/build/ross2_vision' returned '0': PYTHONPATH=/home/sanjay/github_repos/ROSS2/ROS2_testing/build/ross2_vision/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/home/sanjay/github_repos/ROSS2/ROS2_testing/install/ross2_vision/lib/python3.12/site-packages:${PYTHONPATH} /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py develop --editable --build-directory /home/sanjay/github_repos/ROSS2/ROS2_testing/build/ross2_vision/build --no-deps symlink_data
