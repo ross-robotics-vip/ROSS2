@@ -21,7 +21,8 @@ setup(
     entry_points={
         'console_scripts': [
             'esp32_cam_node = ross2_vision.esp32_cam_node:main',
-            'yolov6_node = ross2_vision.yolov6_node:main'
+            'yolov6_node = ross2_vision.yolov6_node:main',
+            'klt_slam_node = ross2_vision.klt_slam_node:main',
         ],
     },
 )

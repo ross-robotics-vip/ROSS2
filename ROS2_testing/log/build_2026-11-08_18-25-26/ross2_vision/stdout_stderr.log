@@ -1,0 +1,19 @@
+/home/sanjay/.local/lib/python3.12/site-packages/setuptools/_distutils/dist.py:289: UserWarning: Unknown distribution option: 'tests_require'
+  warnings.warn(msg)
+running develop
+running egg_info
+writing ross2_vision.egg-info/PKG-INFO
+writing dependency_links to ross2_vision.egg-info/dependency_links.txt
+writing entry points to ross2_vision.egg-info/entry_points.txt
+writing requirements to ross2_vision.egg-info/requires.txt
+writing top-level names to ross2_vision.egg-info/top_level.txt
+reading manifest file 'ross2_vision.egg-info/SOURCES.txt'
+writing manifest file 'ross2_vision.egg-info/SOURCES.txt'
+running build_ext
+Creating /home/sanjay/github_repos/ROSS2/ROS2_testing/install/ross2_vision/lib/python3.12/site-packages/ross2-vision.egg-link (link to .)
+Installing esp32_cam_node script to /home/sanjay/github_repos/ROSS2/ROS2_testing/install/ross2_vision/lib/ross2_vision
+Installing klt_slam_node script to /home/sanjay/github_repos/ROSS2/ROS2_testing/install/ross2_vision/lib/ross2_vision
+Installing yolov6_node script to /home/sanjay/github_repos/ROSS2/ROS2_testing/install/ross2_vision/lib/ross2_vision
+
+Installed /home/sanjay/github_repos/ROSS2/ROS2_testing/build/ross2_vision
+running symlink_data
