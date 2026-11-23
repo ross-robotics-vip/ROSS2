@@ -115,6 +115,10 @@ class QuadMD:
         value = (((high[0] << 8) | high[1]) << 16) | ((low[0] << 8) | low[1])
         return value - (1 << 32) if value & 0x80000000 else value   # signed 32-bit
 
+    def encoder_totals(self):
+        """All four encoder counts at once: [M1, M2, M3, M4]."""
+        return [self.encoder_total(m) for m in (1, 2, 3, 4)]
+
     def close(self):
         self.bus.close()
 
@@ -194,6 +198,11 @@ class QuadMDSerial:
     def encoder_total(self, motor):
         self._read_lines()
         return self.encoders[motor - 1]
+
+    def encoder_totals(self):
+        """All four encoder counts at once: [M1, M2, M3, M4]."""
+        self._read_lines(timeout=0.01)
+        return list(self.encoders)
 
     def close(self):
         self._send("$upload:0,0,0#")    # stop the encoder stream
