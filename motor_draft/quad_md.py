@@ -140,13 +140,19 @@ class QuadMDSerial:
         self.port.write(command.encode("ascii"))
         time.sleep(0.01)
 
-    def _read_lines(self, until=None, timeout=0.0):
-        """Read replies; keep the latest encoder counts. Return the first line
-        starting with `until`, if asked for one."""
+    def _read_lines(self, until=None, timeout=0.05):
+        """Read the replies waiting right now; keep the latest encoder counts.
+
+        Returns the first line starting with `until`, if asked for one. Never
+        runs longer than `timeout` seconds: the board streams encoder counts
+        non-stop, so "read until nothing is left" would never finish.
+        """
         end = time.monotonic() + timeout
-        while True:
-            raw = self.port.readline()
-            line = raw.decode("ascii", "ignore").strip()
+        while time.monotonic() < end:
+            if not self.port.in_waiting:
+                time.sleep(0.005)
+                continue
+            line = self.port.readline().decode("ascii", "ignore").strip()
             if line.startswith("$MAll:") and line.endswith("#"):
                 try:
                     self.encoders = [int(v) for v in line[6:-1].split(",")][:4]
@@ -154,8 +160,7 @@ class QuadMDSerial:
                     pass
             if until and line.startswith(until):
                 return line
-            if not raw and time.monotonic() >= end:
-                return None
+        return None
 
     def configure(self, preset):
         p = MOTOR_PRESETS[preset]
