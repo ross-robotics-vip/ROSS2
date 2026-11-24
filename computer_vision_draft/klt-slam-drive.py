@@ -327,12 +327,12 @@ class ControlServer:
 def get_local_ip():
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
-        socket.connect(("8.8.8.8", 80))
-        ip = socket.getsockname()[0]
+        sock.connect(("8.8.8.8", 80))
+        ip = sock.getsockname()[0]
     except Exception:
         ip = "127.0.0.1"
     finally:
-        socket.close()
+        sock.close()
     return ip
 
 
