@@ -60,11 +60,11 @@ VIEW_PORT = 8090
 
 # Which motor port is which wheel. Yahboom labels M1 as the front-left wheel;
 # check the rest with H J K L and change these if your wiring differs.
-LEFT_MOTORS = (1, 2)
-RIGHT_MOTORS = (3, 4)
+LEFT_MOTORS = (3, 4)    # swapped with RIGHT so A/D stay the same after the W/S flip
+RIGHT_MOTORS = (1, 2)
 # +1 or -1 per motor: flip any wheel that spins BACKWARDS when you press W
 # (motors on the right side are often mounted mirror-image).
-MOTOR_DIRECTION = {1: -1, 2: -1, 3: -1, 4: -1}   # M1 tested: its wiring runs reversed
+MOTOR_DIRECTION = {1: 1, 2: 1, 3: 1, 4: 1}   # tested on the car: these make W go forward
 
 DEFAULT_SPEED = 1500      # motor power, out of 3600
 SPEED_STEP = 300          # how much - and = change it
