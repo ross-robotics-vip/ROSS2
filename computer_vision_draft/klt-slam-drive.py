@@ -324,6 +324,18 @@ class ControlServer:
 #  MAIN LOOP  (rotate-klt-slam.py's loop + driving)
 # ═══════════════════════════════════════════════════════════════
 
+def get_local_ip():
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        socket.connect(("8.8.8.8", 80))
+        ip = socket.getsockname()[0]
+    except Exception:
+        ip = "127.0.0.1"
+    finally:
+        socket.close()
+    return ip
+
+
 def run(args):
     rk.DETECTOR = args.detector
     camera = cv2.VideoCapture(rk.SOURCE) if args.laptop else rk.PiCamera()
@@ -343,8 +355,8 @@ def run(args):
     tracker, pose, people_map = rk.KLTTracker(), rk.Pose(), rk.PeopleMap()
     trajectory = [(0.0, 0.0)]
     boxes, frame_i, t_prev = [], 0, None
-    name = socket.gethostname().split(".")[0]
-    print(f"Open http://{name}.local:{args.port}/ to watch and drive. Ctrl+C = stop + save.")
+    ip = get_local_ip()
+    print(f"Open http://{ip}.local:{args.port}/ to watch and drive. Ctrl+C = stop + save.")
 
     try:
         while True:
