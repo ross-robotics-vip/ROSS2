@@ -22,7 +22,7 @@ FIRST TIME (wheels off the ground!)
   Then set LEFT_MOTORS / RIGHT_MOTORS / MOTOR_DIRECTION below so that W rolls
   every wheel forward.
 
-RUN (on the Pi, from ~/ROSS2), then open http://ross-test.local:8090
+RUN (on the Pi, from ~/ROSS2), then open the http://<pi-ip>:8090 link it prints
   python3 computer_vision_draft/klt-slam-drive.py                   # Hailo people detection
   python3 computer_vision_draft/klt-slam-drive.py --detector none   # SLAM + driving only
   Ctrl+C on the Pi stops the motors and saves the map to outputs/.
@@ -34,6 +34,7 @@ import importlib.util
 import json
 import math
 import socket
+import subprocess
 import sys
 import threading
 import time
@@ -324,16 +325,27 @@ class ControlServer:
 #  MAIN LOOP  (rotate-klt-slam.py's loop + driving)
 # ═══════════════════════════════════════════════════════════════
 
-def get_local_ip():
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    try:
-        sock.connect(("8.8.8.8", 80))
-        ip = sock.getsockname()[0]
+def get_local_ips():
+    """Every IPv4 address this machine has on a network (Wi-Fi, Ethernet,
+    Tailscale...). Uses IPs, not hostname.local, because .local names often
+    don't resolve on school/phone-hotspot networks."""
+    ips = []
+    try:  # Linux (the Pi): lists the address of every network interface
+        out = subprocess.run(["hostname", "-I"], capture_output=True,
+                             text=True, timeout=2).stdout
+        ips = [ip for ip in out.split() if "." in ip and not ip.startswith("127.")]
     except Exception:
-        ip = "127.0.0.1"
-    finally:
-        sock.close()
-    return ip
+        pass
+    if not ips:  # macOS / fallback: ask which address the default route uses
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            sock.connect(("10.255.255.255", 1))  # UDP: nothing is actually sent
+            ips = [sock.getsockname()[0]]
+        except Exception:
+            ips = ["127.0.0.1"]
+        finally:
+            sock.close()
+    return ips
 
 
 def run(args):
@@ -355,8 +367,10 @@ def run(args):
     tracker, pose, people_map = rk.KLTTracker(), rk.Pose(), rk.PeopleMap()
     trajectory = [(0.0, 0.0)]
     boxes, frame_i, t_prev = [], 0, None
-    ip = get_local_ip()
-    print(f"Open http://{ip}.local:{args.port}/ to watch and drive. Ctrl+C = stop + save.")
+    print("Open one of these in a browser on the same network to watch and drive:")
+    for ip in get_local_ips():
+        print(f"  http://{ip}:{args.port}/")
+    print("Ctrl+C = stop + save.")
 
     try:
         while True:
